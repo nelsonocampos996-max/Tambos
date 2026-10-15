@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EM-1 Control Tambos & Clientes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans min-h-screen">
+
+    <!-- BARRA SUPERIOR -->
+    <nav class="bg-emerald-800 text-white shadow-lg sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-3">
+                <i class="fa-solid fa-flask-vial text-2xl text-emerald-300"></i>
+                <div>
+                    <h1 class="font-bold text-lg leading-none">EM•1® Control Tambos</h1>
+                    <p class="text-xs text-emerald-200">Gestión de Clientes, Consumo Diario, Stock y Deudas</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick="toggleFirebaseModal()" class="bg-emerald-700 hover:bg-emerald-600 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1 border border-emerald-500">
+                    <i class="fa-solid fa-cloud"></i> Firebase
+                </button>
+                <button onclick="openModal()" class="bg-white text-emerald-800 hover:bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-bold shadow flex items-center gap-1">
+                    <i class="fa-solid fa-plus"></i> Nuevo
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
+
+        <!-- RESUMEN / TARJETAS -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <p class="text-xs font-bold text-gray-500 uppercase">Productores</p>
+                <h3 id="statTotalProductores" class="text-2xl font-black text-gray-800 mt-1">0</h3>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <p class="text-xs font-bold text-gray-500 uppercase">Consumo Total Día</p>
+                <h3 id="statConsumoDia" class="text-2xl font-black text-emerald-600 mt-1">0 L/día</h3>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <p class="text-xs font-bold text-gray-500 uppercase">Alertas Stock</p>
+                <h3 id="statAlertaStock" class="text-2xl font-black text-amber-600 mt-1">0</h3>
+            </div>
+            <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                <p class="text-xs font-bold text-gray-500 uppercase">Deudas Pendientes</p>
+                <h3 id="statDeudas" class="text-2xl font-black text-red-600 mt-1">0</h3>
+            </div>
+        </div>
+
+        <!-- BUSCADOR Y FILTROS -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row gap-3 justify-between items-center">
+            <div class="relative w-full md:w-96">
+                <i class="fa-solid fa-magnifying-glass absolute left-3 top-3 text-gray-400"></i>
+                <input type="text" id="searchInput" oninput="renderProductores()" placeholder="Buscar por productor, RUC o ubicación..." class="w-full pl-9 pr-4 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+            </div>
+            <div class="flex gap-2 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                <button onclick="setFilter('todos')" class="filter-btn active bg-emerald-800 text-white px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap">Todos</button>
+                <button onclick="setFilter('alerta')" class="filter-btn bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap">⚠️ Stock Crítico (&lt;15 días)</button>
+                <button onclick="setFilter('deuda')" class="filter-btn bg-gray-100 text-gray-700 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap">💳 Con Deuda</button>
+            </div>
+        </div>
+
+        <!-- TABLA DE PRODUCTORES -->
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-gray-50 text-gray-600 font-semibold border-b">
+                        <tr>
+                            <th class="p-3">Productor / RUC</th>
+                            <th class="p-3">Ubicación / Has</th>
+                            <th class="p-3">Consumo Día / Mes</th>
+                            <th class="p-3">Stock & Agotamiento</th>
+                            <th class="p-3">Estado Pago</th>
+                            <th class="p-3">Observaciones</th>
+                            <th class="p-3 text-center">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="listaProductores" class="divide-y divide-gray-100">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL NUEVO / EDITAR PRODUCTOR -->
+    <div id="productorModal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 id="modalTitle" class="font-bold text-lg text-gray-800">Registrar Productor</h3>
+                <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <form id="productorForm" onsubmit="guardarProductor(event)" class="space-y-4">
+                <input type="hidden" id="prodId">
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">Nombre Productor/Establecimiento *</label>
+                        <input type="text" id="nombre" required class="w-full p-2 border rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">RUC *</label>
+                        <input type="text" id="ruc" required class="w-full p-2 border rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">Teléfono *</label>
+                        <input type="tel" id="telefono" required class="w-full p-2 border rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">Ubicación *</label>
+                        <input type="text" id="ubicacion" required class="w-full p-2 border rounded-lg text-sm">
+                    </div>
+                </div>
+
+                <div class="border-t pt-3">
+                    <p class="text-xs font-bold text-emerald-800 mb-2">Superficie (Hectáreas)</p>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div>
+                            <label class="block text-[11px] text-gray-600">Has Totales</label>
+                            <input type="number" id="hasTotales" value="0" class="w-full p-2 border rounded-lg text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-gray-600">Has Leche</label>
+                            <input type="number" id="hasLeche" value="0" class="w-full p-2 border rounded-lg text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-gray-600">Has Agronomía</label>
+                            <input type="number" id="hasAgronomia" value="0" class="w-full p-2 border rounded-lg text-sm">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t pt-3">
+                    <p class="text-xs font-bold text-emerald-800 mb-2">Categorías y Dosis EM-1®</p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                        <div class="p-2 bg-gray-50 rounded-lg border">
+                            <span class="font-bold text-gray-700 block mb-1">Vacas Producción</span>
+                            <input type="number" id="vacasProd" placeholder="Cant. animales" class="w-full p-1 border rounded mb-1 text-xs">
+                            <input type="number" id="dosisVacas" placeholder="mL / vaca / día" class="w-full p-1 border rounded text-xs">
+                        </div>
+                        <div class="p-2 bg-gray-50 rounded-lg border">
+                            <span class="font-bold text-gray-700 block mb-1">Vaquillas</span>
+                            <input type="number" id="vaquillas" placeholder="Cant. animales" class="w-full p-1 border rounded mb-1 text-xs">
+                            <input type="number" id="dosisVaquillas" placeholder="mL / cab. / día" class="w-full p-1 border rounded text-xs">
+                        </div>
+                        <div class="p-2 bg-gray-50 rounded-lg border">
+                            <span class="font-bold text-gray-700 block mb-1">Terneros</span>
+                            <input type="number" id="terneros" placeholder="Cant. animales" class="w-full p-1 border rounded mb-1 text-xs">
+                            <input type="number" id="dosisTerneros" placeholder="mL / cab. / día" class="w-full p-1 border rounded text-xs">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t pt-3 grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">Stock Actual (Litros)</label>
+                        <input type="number" step="0.1" id="stockLitros" required class="w-full p-2 border rounded-lg text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-700">Estado de Cuenta</label>
+                        <select id="estadoPago" class="w-full p-2 border rounded-lg text-sm">
+                            <option value="pagado">🟢 Al Día / Pagado</option>
+                            <option value="pendiente">🔴 Pago Pendiente</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-700">Observaciones y Notas</label>
+                    <textarea id="observaciones" rows="2" placeholder="Notas adicionales..." class="w-full p-2 border rounded-lg text-sm"></textarea>
+                </div>
+
+                <div class="flex justify-end gap-2 border-t pt-3">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 border rounded-lg text-sm font-semibold">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 bg-emerald-800 text-white rounded-lg text-sm font-semibold hover:bg-emerald-700">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL VENTA Y CALCULO DE PRECIOS -->
+    <div id="historialModal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4">
+            <div class="flex justify-between items-center border-b pb-3">
+                <h3 class="font-bold text-lg text-gray-800">Registrar Entrega EM-1®</h3>
+                <button onclick="closeHistorialModal()" class="text-gray-400"><i class="fa-solid fa-xmark text-xl"></i></button>
+            </div>
+            
+            <form id="compraForm" onsubmit="agregarCompra(event)" class="space-y-3">
+                <input type="hidden" id="compraProdId">
+                <div>
+                    <label class="block text-xs font-bold text-gray-700">Litros Vendidos / Entregados</label>
+                    <input type="number" id="compraLitros" required oninput="calcularPrecioVenta()" class="w-full p-2 border rounded-lg text-sm" placeholder="Ej: 50 o 120">
+                </div>
+                <div class="p-3 bg-emerald-50 rounded-lg text-xs space-y-1 border border-emerald-200">
+                    <div class="flex justify-between">
+                        <span>Precio por litro:</span>
+                        <span id="precioUnitario" class="font-bold">10.000 Gs</span>
+                    </div>
+                    <div class="flex justify-between text-sm font-bold text-emerald-900 pt-1 border-t border-emerald-200">
+                        <span>Monto Total:</span>
+                        <span id="montoTotalCalc">0 Gs</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-gray-700">Estado del Cobro</label>
+                    <select id="compraEstadoPago" class="w-full p-2 border rounded-lg text-sm">
+                        <option value="pagado">🟢 Pagado / Cobrado</option>
+                        <option value="pendiente">🔴 Pendiente de Cobro</option>
+                    </select>
+                </div>
+                <button type="submit" class="w-full py-2 bg-emerald-800 text-white rounded-lg font-bold text-sm">Confirmar Entrega</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- MODAL FIREBASE -->
+    <div id="firebaseModal" class="fixed inset-0 bg-black/50 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full p-6 space-y-3">
+            <h3 class="font-bold text-lg text-gray-800">Conexión Firebase</h3>
+            <p class="text-xs text-gray-500">Pega aquí tu configuración para sincronizar con tu jefe en tiempo real.</p>
+            <textarea id="firebaseConfigInput" rows="6" placeholder='Pega tu firebaseConfig aquí...' class="w-full p-2 border text-xs font-mono rounded-lg"></textarea>
+            <div class="flex justify-end gap-2">
+                <button onclick="toggleFirebaseModal()" class="px-3 py-1.5 border rounded-lg text-xs">Cancelar</button>
+                <button onclick="guardarFirebaseConfig()" class="px-3 py-1.5 bg-emerald-800 text-white rounded-lg text-xs font-bold">Conectar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let productores = JSON.parse(localStorage.getItem('em1_productores_v3') || '[]');
+        let currentFilter = 'todos';
+
+        function saveLocal() {
+            localStorage.setItem('em1_productores_v3', JSON.stringify(productores));
+            renderProductores();
+        }
+
+        function setFilter(f) {
+            currentFilter = f;
+            renderProductores();
+        }
+
+        function calcularConsumoDiario(p) {
+            let vProd = (p.vacasProd || 0) * (p.dosisVacas || 0);
+            let vaq = (p.vaquillas || 0) * (p.dosisVaquillas || 0);
+            let ter = (p.terneros || 0) * (p.dosisTerneros || 0);
+            return (vProd + vaq + ter) / 1000;
+        }
+
+        function renderProductores() {
+            const tbody = document.getElementById('listaProductores');
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            tbody.innerHTML = '';
+
+            let totalProd = 0, consumoTotalDia = 0, alertaCount = 0, deudaCount = 0;
+
+            productores.forEach((p, idx) => {
+                let consumoDiario = calcularConsumoDiario(p);
+                let consumoMes = consumoDiario * 30;
+                let diasStock = consumoDiario > 0 ? Math.floor(p.stockLitros / consumoDiario) : 999;
+
+                if (search && !p.nombre.toLowerCase().includes(search) && !p.ruc.includes(search) && !p.ubicacion.toLowerCase().includes(search)) return;
+
+                if (currentFilter === 'alerta' && diasStock > 15) return;
+                if (currentFilter === 'deuda' && p.estadoPago !== 'pendiente') return;
+
+                totalProd++;
+                consumoTotalDia += consumoDiario;
+                if (diasStock <= 15) alertaCount++;
+                if (p.estadoPago === 'pendiente') deudaCount++;
+
+                let fechaAgotamiento = new Date();
+                fechaAgotamiento.setDate(fechaAgotamiento.getDate() + diasStock);
+
+                let row = document.createElement('tr');
+                row.className = "hover:bg-gray-50 border-b";
+                row.innerHTML = `
+                    <td class="p-3">
+                        <div class="font-bold text-gray-800">${p.nombre}</div>
+                        <div class="text-xs text-gray-500">RUC: ${p.ruc} | Tel: ${p.telefono}</div>
+                    </td>
+                    <td class="p-3">
+                        <div class="text-xs font-medium">${p.ubicacion}</div>
+                        <div class="text-[11px] text-gray-400">Total: ${p.hasTotales||0} Has (Leche: ${p.hasLeche||0} / Agro: ${p.hasAgronomia||0})</div>
+                    </td>
+                    <td class="p-3 text-xs">
+                        <div class="font-bold text-emerald-800">${consumoDiario.toFixed(1)} L / día</div>
+                        <div class="text-[11px] text-gray-500">Est. Mes: ${consumoMes.toFixed(0)} L</div>
+                    </td>
+                    <td class="p-3">
+                        <span class="font-bold text-sm">${p.stockLitros} Litros</span>
+                        <div class="text-xs ${diasStock <= 5 ? 'text-red-600 font-bold' : diasStock <= 15 ? 'text-amber-600 font-semibold' : 'text-emerald-600'}">
+                            ${diasStock < 900 ? '⚠️ Se termina en ' + diasStock + ' días (' + fechaAgotamiento.toLocaleDateString() + ')' : 'Sin consumo'}
+                        </div>
+                    </td>
+                    <td class="p-3">
+                        <span class="px-2 py-1 rounded-full text-[10px] font-bold ${p.estadoPago === 'pendiente' ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700'}">
+                            ${p.estadoPago === 'pendiente' ? '🔴 DEUDA PENDIENTE' : '🟢 AL DÍA'}
+                        </span>
+                    </td>
+                    <td class="p-3 text-xs text-gray-600 max-w-xs truncate">
+                        ${p.observaciones || '<span class="text-gray-300">Sin notas</span>'}
+                    </td>
+                    <td class="p-3 text-center space-x-1 whitespace-nowrap">
+                        <button onclick="abrirCompraModal(${idx})" class="p-1.5 bg-emerald-100 text-emerald-800 rounded hover:bg-emerald-200" title="Vender/Sumar Stock"><i class="fa-solid fa-cart-plus"></i></button>
+                        <button onclick="editarProductor(${idx})" class="p-1.5 bg-blue-100 text-blue-800 rounded hover:bg-blue-200" title="Editar"><i class="fa-solid fa-pen"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+
+            document.getElementById('statTotalProductores').innerText = totalProd;
+            document.getElementById('statConsumoDia').innerText = consumoTotalDia.toFixed(1) + ' L/día';
+            document.getElementById('statAlertaStock').innerText = alertaCount;
+            document.getElementById('statDeudas').innerText = deudaCount;
+        }
+
+        function openModal() { document.getElementById('productorModal').classList.remove('hidden'); }
+        function closeModal() { document.getElementById('productorModal').classList.add('hidden'); }
+        function toggleFirebaseModal() { document.getElementById('firebaseModal').classList.toggle('hidden'); }
+
+        function guardarProductor(e) {
+            e.preventDefault();
+            let idx = document.getElementById('prodId').value;
+            let data = {
+                nombre: document.getElementById('nombre').value,
+                ruc: document.getElementById('ruc').value,
+                telefono: document.getElementById('telefono').value,
+                ubicacion: document.getElementById('ubicacion').value,
+                hasTotales: Number(document.getElementById('hasTotales').value),
+                hasLeche: Number(document.getElementById('hasLeche').value),
+                hasAgronomia: Number(document.getElementById('hasAgronomia').value),
+                vacasProd: Number(document.getElementById('vacasProd').value),
+                dosisVacas: Number(document.getElementById('dosisVacas').value),
+                vaquillas: Number(document.getElementById('vaquillas').value),
+                dosisVaquillas: Number(document.getElementById('dosisVaquillas').value),
+                terneros: Number(document.getElementById('terneros').value),
+                dosisTerneros: Number(document.getElementById('dosisTerneros').value),
+                stockLitros: Number(document.getElementById('stockLitros').value),
+                estadoPago: document.getElementById('estadoPago').value,
+                observaciones: document.getElementById('observaciones').value
+            };
+
+            if (idx === "") productores.push(data);
+            else productores[idx] = data;
+
+            closeModal();
+            saveLocal();
+        }
+
+        function editarProductor(idx) {
+            let p = productores[idx];
+            document.getElementById('prodId').value = idx;
+            document.getElementById('nombre').value = p.nombre;
+            document.getElementById('ruc').value = p.ruc;
+            document.getElementById('telefono').value = p.telefono;
+            document.getElementById('ubicacion').value = p.ubicacion;
+            document.getElementById('hasTotales').value = p.hasTotales || 0;
+            document.getElementById('hasLeche').value = p.hasLeche || 0;
+            document.getElementById('hasAgronomia').value = p.hasAgronomia || 0;
+            document.getElementById('vacasProd').value = p.vacasProd || '';
+            document.getElementById('dosisVacas').value = p.dosisVacas || '';
+            document.getElementById('vaquillas').value = p.vaquillas || '';
+            document.getElementById('dosisVaquillas').value = p.dosisVaquillas || '';
+            document.getElementById('terneros').value = p.terneros || '';
+            document.getElementById('dosisTerneros').value = p.dosisTerneros || '';
+            document.getElementById('stockLitros').value = p.stockLitros || 0;
+            document.getElementById('estadoPago').value = p.estadoPago || 'pagado';
+            document.getElementById('observaciones').value = p.observaciones || '';
+            openModal();
+        }
+
+        function abrirCompraModal(idx) {
+            document.getElementById('compraProdId').value = idx;
+            document.getElementById('historialModal').classList.remove('hidden');
+        }
+
+        function closeHistorialModal() { document.getElementById('historialModal').classList.add('hidden'); }
+
+        function calcularPrecioVenta() {
+            let litros = Number(document.getElementById('compraLitros').value || 0);
+            let precio = litros >= 100 ? 8000 : 10000;
+            let total = litros * precio;
+            document.getElementById('precioUnitario').innerText = precio.toLocaleString('es-PY') + " Gs";
+            document.getElementById('montoTotalCalc').innerText = total.toLocaleString('es-PY') + " Gs";
+        }
+
+        function agregarCompra(e) {
+            e.preventDefault();
+            let idx = document.getElementById('compraProdId').value;
+            let litros = Number(document.getElementById('compraLitros').value);
+            let estado = document.getElementById('compraEstadoPago').value;
+
+            productores[idx].stockLitros += litros;
+            if (estado === 'pendiente') productores[idx].estadoPago = 'pendiente';
+
+            closeHistorialModal();
+            saveLocal();
+        }
+
+        renderProductores();
+    </script>
+</body>
+</html>
